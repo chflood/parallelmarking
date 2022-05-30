@@ -184,7 +184,7 @@ typedef struct {
     int64_t size;
 } jl_gc_ws_array_t;
 
-#define GC_QUEUE_INIT_SIZE (1 << 18)
+#define JL_GC_QUEUE_INIT_SIZE (1 << 10)
 #define ARRAY_AS_PTR
 
 typedef struct {

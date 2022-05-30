@@ -642,7 +642,7 @@ extern int gc_verifying;
 #endif
 int gc_slot_to_fieldidx(void *_obj, void *slot);
 int gc_slot_to_arrayidx(void *_obj, void *begin);
-// NOINLINE void gc_mark_loop_unwind(jl_ptls_t ptls, int pc_offset);
+NOINLINE void gc_mark_loop_unwind(jl_ptls_t ptls, int pc_offset);
 
 #ifdef GC_DEBUG_ENV
 JL_DLLEXPORT extern jl_gc_debug_env_t jl_gc_debug_env;

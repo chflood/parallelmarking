@@ -231,9 +231,15 @@ void jl_safepoint_master_recruit_workers(jl_ptls_t ptls, size_t nworkers)
 
 int jl_safepoint_master_end_marking(jl_ptls_t ptls)
 {
+    uint8_t state0 = jl_gc_state_save_and_set(ptls, JL_GC_STATE_PARALLEL);
+    int ret_val = 0;
+
     // Fast path for mark-loop termination
-    if (jl_safepoint_all_workers_done(ptls))
-        return 1;
+    if (jl_safepoint_all_workers_done(ptls)) {
+        ret_val = 1;
+        goto ret_label;
+    }
+
     int no_master = -1;
     if (jl_atomic_cmpswap(&jl_gc_safepoint_master, &no_master, ptls->tid)) {
         spin : {
@@ -246,17 +252,19 @@ int jl_safepoint_master_end_marking(jl_ptls_t ptls)
                     jl_safepoint_master_recruit_workers(ptls, work - 1);
                     jl_atomic_store_release(&jl_gc_safepoint_master, -1);
                     jl_safepoint_try_recruit(ptls);
-                    return 0;
+                    goto ret_label;
                 }
                 goto spin;
             }
         }
-        jl_atomic_store_release(&jl_gc_recruiting_location, NULL);
-        jl_atomic_store_release(&jl_gc_safepoint_master, -1);
         jl_safepoint_master_notify_all(ptls);
-        return 1;
+        jl_atomic_store_release(&jl_gc_safepoint_master, -1);
+        ret_val = 1;
     }
-    return 0;
+
+ret_label:
+    jl_gc_state_set(ptls, state0, JL_GC_STATE_PARALLEL);
+    return ret_val;
 }
 
 void jl_safepoint_wait_gc(void)
