@@ -223,6 +223,17 @@ STATIC_INLINE void *gc_get_markdata_bottom(jl_gc_ws_queue_t *mark_queue) JL_NOTS
     return &array->data_start[bottom.data_offset % array->size];
 }
 
+
+typedef struct deque_stats_t {
+    int num_pushes;
+    int num_pops;
+    int num_steals;
+    int num_repushes;
+} deque_stats_t;
+
+static struct deque_stats_t *deque_stats;
+
+
 // Re-push a frame to the mark queue (both data and pc)
 // The data and pc are expected to be on the queue (or updated in place) already.
 // Mainly useful to pause the current scanning in order to scan an new object.
@@ -238,6 +249,7 @@ STATIC_INLINE void *gc_repush_markdata(jl_gc_ws_queue_t *mark_queue) JL_NOTSAFEP
     bottom.pc_offset++;
     bottom.data_offset++;
     jl_atomic_store_relaxed(&mark_queue->bottom, bottom);
+    deque_stats[jl_threadid()].num_repushes++;
     return data;
 }
 

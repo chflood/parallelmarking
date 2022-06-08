@@ -120,6 +120,7 @@ static uv_mutex_t gc_cache_lock;
 // of objects.
 static _Atomic(int) support_conservative_marking = 0;
 
+
 /**
  * Note about GC synchronization:
  *
@@ -1725,6 +1726,7 @@ STATIC_INLINE void *gc_mark_deque_pop_pc(jl_gc_ws_queue_t *mark_queue)
 #else
     jl_gc_ws_array_t *array = &mark_queue->array;
 #endif
+
     int b = bottom.pc_offset - 1;
     jl_gc_ws_bottom_t bottom2 = {b, bottom.data_offset};
     jl_atomic_store_relaxed(&mark_queue->bottom, bottom2);
@@ -1745,6 +1747,7 @@ STATIC_INLINE void *gc_mark_deque_pop_pc(jl_gc_ws_queue_t *mark_queue)
         pc = (void *)_GC_MARK_L_MAX;
         jl_atomic_store_relaxed(&mark_queue->bottom, bottom);
     }
+    deque_stats[jl_threadid()].num_pops++;
     return pc;
 }
 
@@ -1843,6 +1846,7 @@ STATIC_INLINE void gc_mark_deque_push(jl_gc_mark_cache_t *gc_cache, void *pc, vo
         bottom.data_offset++;
         jl_atomic_store_relaxed(&mark_queue->bottom, bottom);
     }
+    deque_stats[jl_threadid()].num_pushes++;
 }
 
 // Steal a work item from the queue in the cache referenced by `gc_cache2`
@@ -1872,6 +1876,7 @@ STATIC_INLINE int gc_mark_deque_try_steal(jl_gc_mark_cache_t *gc_cache,
     // Push stolen items to thief's queue
     size_t data_size = gc_mark_label_sizes[(int)(uintptr_t)pc];
     gc_mark_deque_push(gc_cache, pc, data, data_size, inc);
+    deque_stats[jl_threadid()].num_steals++;
     return 1;
 }
 
@@ -3221,6 +3226,13 @@ static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
 {
     combine_thread_gc_counts(&gc_num);
 
+    for (int i = 0; i < jl_n_threads; i++) {
+        deque_stats[i].num_pushes = 0;
+        deque_stats[i].num_pops = 0;
+        deque_stats[i].num_steals = 0;
+        deque_stats[i].num_repushes = 0;
+    }
+
     jl_gc_mark_cache_t *gc_cache = &ptls->gc_cache;
 
     uint64_t t0 = jl_hrtime();
@@ -3452,7 +3464,12 @@ static int _jl_gc_collect(jl_ptls_t ptls, jl_gc_collection_t collection)
     if (pause > gc_num.max_pause) {
         gc_num.max_pause = pause;
     }
-    reset_thread_gc_counts();
+
+    for (int i = 0; i < jl_n_threads; i++) {
+        jl_safe_printf("Thread %d: num_pushes = %d, num_pops = %d, num_steals = %d, num_repushes = %d\n",
+                       i, deque_stats[i].num_pushes, deque_stats[i].num_pops,
+                       deque_stats[i].num_steals, deque_stats[i].num_repushes);
+    }
 
     return recollect;
 }
@@ -3636,6 +3653,7 @@ void jl_gc_init(void)
 #endif
     gc_mark_loop(NULL);
     t_start = jl_hrtime();
+    deque_stats = (deque_stats_t*) malloc(sizeof(deque_stats_t) * jl_cpu_threads());
 }
 
 void jl_gc_set_max_memory(uint64_t max_mem)
